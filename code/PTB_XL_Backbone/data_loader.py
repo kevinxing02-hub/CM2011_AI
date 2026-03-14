@@ -22,8 +22,8 @@ from sklearn.preprocessing import MultiLabelBinarizer
 # 1. Configuration & Relative Paths
 # ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RAW_DATA_PATH = os.path.join(BASE_DIR, 'raw_data', 'ptbxl', '')
-SAVE_DIR = os.path.join(BASE_DIR, 'used_data', 'data_basic_ptb')
+RAW_DATA_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', '..', 'raw_data', 'ptbxl'))
+SAVE_DIR = os.path.join(BASE_DIR, '..', '..', 'used_data', 'data_ptb')
 SAMPLING_RATE = 100
 
 os.makedirs(SAVE_DIR, exist_ok=True)
