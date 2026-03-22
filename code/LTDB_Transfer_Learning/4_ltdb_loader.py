@@ -52,7 +52,7 @@ def process_ltdb_signals(record_name, data_dir):
             
             # Purity check: Arrhythmias allowed at 30% majority (per your code logic); Normal must be 100%
             is_pure = len(set(window_anns)) == 1
-            is_majority_arr = (label != 'N') and (count / len(window_anns) >= 0.3)
+            is_majority_arr = (label != 'N') and (count >= 1)
             
             if (is_pure or is_majority_arr) and label not in ['~', '|', '+', 'x']:
                 segment = resampled_signal[start:end].T # [Leads, Time]
@@ -62,13 +62,40 @@ def process_ltdb_signals(record_name, data_dir):
 
     return X_list, y_list
 
+
+def count_ltdb_annotations(records, data_dir):
+    overall_counts = Counter()
+    
+    print(f"Starting Annotation Count for {len(records)} records")
+    
+    for record in records:
+        try:
+            path = os.path.join(data_dir, record)
+            # We only need the annotations ('atr') for the count
+            ann = wfdb.rdann(path, 'atr')
+            
+            # Update the counter with the labels from this specific record
+            overall_counts.update(ann.symbol)
+            
+        except Exception as e:
+            print(f" Error reading annotations for {record}: {e}")
+            
+    return overall_counts
+
 if __name__ == "__main__":
     os.makedirs(SAVE_DIR, exist_ok=True)
     raw_files = glob.glob(os.path.join(RAW_DATA_PATH, "*.hea"))
     records = [os.path.basename(f).replace('.hea', '') for f in raw_files]
 
-    print(f"--- Starting LTDB Processing ---")
+    print(f"Starting LTDB Processing ")
     print(f"Found {len(records)} records in {RAW_DATA_PATH}")
+
+    annotation_results = count_ltdb_annotations(records, RAW_DATA_PATH)
+
+    print("\nAnnotation Totals ")
+    # Sorting by frequency (highest first)
+    for symbol, count in annotation_results.most_common():
+        print(f"Annotation '{symbol}': {count}")
 
     all_X, all_y = [], []
     for record in records:

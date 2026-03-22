@@ -18,6 +18,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from sklearn.preprocessing import MultiLabelBinarizer
 
+
 # ==========================================
 # 1. Configuration & Relative Paths
 # ==========================================
@@ -96,6 +97,7 @@ if __name__ == "__main__":
     Y = pd.read_csv(os.path.join(RAW_DATA_PATH, 'ptbxl_database.csv'), index_col='ecg_id')
     Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
 
+
     # Load raw signal data
     X = load_raw_data(Y, SAMPLING_RATE, RAW_DATA_PATH)
 
@@ -103,6 +105,7 @@ if __name__ == "__main__":
     agg_df = pd.read_csv(os.path.join(RAW_DATA_PATH, 'scp_statements.csv'), index_col=0)
     agg_df = agg_df[agg_df.diagnostic == 1]
 
+    print("Sucessfully loaded the data")
     # Apply diagnostic superclass
     Y['diagnostic_superclass'] = Y.scp_codes.apply(lambda x: aggregate_diagnostic(x, agg_df))
 
@@ -111,6 +114,8 @@ if __name__ == "__main__":
     Y_bin = mlb.fit_transform(Y.diagnostic_superclass)
 
     # Train/Test Split (Fold 10 is typically the recommended test set for PTB-XL)
+
+    print("Splitting the data")
     test_fold = 10
     train_idx = np.where(Y.strat_fold != test_fold)[0]
     test_idx = np.where(Y.strat_fold == test_fold)[0]

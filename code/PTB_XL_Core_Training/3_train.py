@@ -25,15 +25,29 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, '..', '..', 'used_data', 'data_ptb')
 OUTPUT_DIR = os.path.join(BASE_DIR,'..', '..', 'results', 'ptbxl_v1')
 
+
+def get_device():
+    # Try to load DirectML for AMD GPUs
+    try:
+        import torch_directml
+        return torch_directml.device()
+    except ImportError:
+        pass # Package not found, move on to the next check
+
+    # Fall back to CUDA or CPU
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+
 HP = {
     "LR": 1e-5,
     "BATCH_SIZE": 32,
-    "EPOCHS": 2,         
+    "EPOCHS": 50,         
     "D_MODEL": 128,      
     "N_HEADS": 2,
     "N_LAYERS": 2,
     "DROPOUT": 0.2,
-    "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    "DEVICE": get_device(),
     "THRESHOLD": 0.5, # Threshold for multi-label classification
     "PATIENCE": 10,   # For early stopping
     "DELTA": 0.0001,  

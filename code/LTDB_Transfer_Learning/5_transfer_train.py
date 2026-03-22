@@ -23,10 +23,24 @@ Test_D = os.path.abspath(os.path.join(BASE_DIR, '..', '..', 'used_data', 'data_l
 Read_D = os.path.join(BASE_DIR,'..', '..', 'results', 'ptbxl_v1', 'best_model.pt')
 Output_D = os.path.join(BASE_DIR,'..', '..', 'results', 'ltdb_v1')
 
+
+def get_device():
+    # Try to load DirectML for AMD GPUs
+    try:
+        import torch_directml
+        return torch_directml.device()
+    except ImportError:
+        pass # Package not found, move on to the next check
+
+    # Fall back to CUDA or CPU
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+
 HP_TRANSFER = {
     "BATCH_SIZE": 32,
     "EPOCHS": 10,  # Adjusted for learning curve visibility
-    "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    "DEVICE": get_device(),
     "PRETRAINED_PATH": Read_D,
     "TRAIN_DATA": Train_D,
     "TEST_DATA": Test_D,
