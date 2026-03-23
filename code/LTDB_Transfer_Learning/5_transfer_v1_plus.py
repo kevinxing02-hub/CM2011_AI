@@ -31,7 +31,7 @@ HP = {
     "LR_ENCODER": 5e-5,
     "LR_HEAD": 1e-3,
     "SCHEDULER_FACTOR": 0.5, # Reduce LR by half when performance stalls
-    "SCHEDULER_PATIENCE": 6, # Wait 2 epochs before reducing LR
+    "SCHEDULER_PATIENCE": 7, # Wait 2 epochs before reducing LR
     "MAX_BEATS": 6,  
     "NUM_CLASSES": 4,       # N, V, S, F
     "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -72,8 +72,8 @@ def run_transfer_session():
     
     # Monitor Macro F1 to adjust Learning Rate
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', factor=HP["SCHEDULER_FACTOR"], 
-        patience=HP["SCHEDULER_PATIENCE"], verbose=True
+    optimizer, mode='max', factor=HP["SCHEDULER_FACTOR"], 
+    patience=HP["SCHEDULER_PATIENCE"]
     )
     
     criterion = nn.CrossEntropyLoss(ignore_index=-1) # Ignore padding

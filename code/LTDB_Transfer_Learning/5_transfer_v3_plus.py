@@ -75,13 +75,13 @@ def run_transfer_session():
         {'params': model.classifier.parameters(), 'lr': HP["LR_HEAD"]}
     ])
 
+
     # Scheduler: Reduces LR when Macro F1 stops increasing
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 
         mode='max', 
         factor=HP["LR_FACTOR"], 
-        patience=HP["LR_PATIENCE"], 
-        verbose=True
+        patience=HP["LR_PATIENCE"]
     )
 
     best_f1 = 0

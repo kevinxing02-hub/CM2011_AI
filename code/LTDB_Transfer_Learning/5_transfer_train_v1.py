@@ -15,12 +15,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TRAIN_DATA_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', '..', 'used_data', 'data_ltdb', 'ltdb_train.pt'))
 TEST_DATA_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', '..', 'used_data', 'data_ltdb', 'ltdb_test.pt'))
 PRETRAINED_WEIGHTS = os.path.join(BASE_DIR, '..', '..', 'results', 'ptbxl_v1', 'best_model.pt')
-OUTPUT_DIR = os.path.join(BASE_DIR, '..', '..', 'results', 'ltdb_sequential_v1_ultimate')
+OUTPUT_DIR = os.path.join(BASE_DIR, '..', '..', 'results', 'ltdb_sequential_v1_ultimate_2')
 
 HP = {
     "BATCH_SIZE": 32,
-    "EPOCHS": 80,
-    "PATIENCE": 13,      # Added: Early stopping patience
+    "EPOCHS": 150,
+    "PATIENCE": 11,      # Added: Early stopping patience
     "LR_ENCODER": 5e-5,
     "LR_HEAD": 1e-3,
     "MAX_BEATS": 6,  
