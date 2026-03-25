@@ -1,0 +1,12 @@
+LTDB SEQUENTIAL TRANSFER LEARNING (V1 BASELINE) REPORT
+==================================================
+                  precision    recall  f1-score   support
+
+          Normal       0.97      0.97      0.97    147679
+     Ventricular       0.78      0.77      0.77     15833
+Supraventricular       0.68      0.52      0.59      1460
+    Fusion/Other       0.84      0.77      0.80      1042
+
+        accuracy                           0.95    166014
+       macro avg       0.82      0.76      0.78    166014
+    weighted avg       0.95      0.95      0.95    166014
