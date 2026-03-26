@@ -1,4 +1,4 @@
-LTDB SEQUENTIAL TRANSFER LEARNING (V1 BASELINE) REPORT
+LTDB SEQUENTIAL TRANSFER LEARNING REPORT
 ==================================================
                   precision    recall  f1-score   support
 

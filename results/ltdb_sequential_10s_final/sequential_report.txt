@@ -1,0 +1,11 @@
+--- GENERATING FINAL 10s REPORT ---
+                  precision    recall  f1-score   support
+
+          Normal       0.91      0.98      0.94    210731
+     Ventricular       0.49      0.15      0.23     22981
+Supraventricular       0.44      0.25      0.32      1560
+    Fusion/Other       0.52      0.29      0.37      1065
+
+        accuracy                           0.89    236337
+       macro avg       0.59      0.42      0.47    236337
+    weighted avg       0.86      0.89      0.87    236337
