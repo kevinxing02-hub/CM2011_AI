@@ -32,6 +32,7 @@ def get_device():
         import torch_directml
         return torch_directml.device()
     except ImportError:
+        print("torch_directml not found. Checking for CUDA or CPU...")
         pass # Package not found, move on to the next check
 
     # Fall back to CUDA or CPU
