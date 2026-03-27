@@ -24,6 +24,21 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, '..', '..', 'used_data', 'data_ptb')
 OUTPUT_DIR = os.path.join(BASE_DIR,'..', '..', 'results', 'ptbxl_final')
 
+
+def get_device():
+    # Try to load DirectML for AMD GPUs
+    try:
+        import torch_directml
+        return torch_directml.device()
+    except ImportError:
+        print("torch_directml not found. Checking for CUDA or CPU...")
+        pass # Package not found, move on to the next check
+
+    # Fall back to CUDA or CPU
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+
 HP = {
     "LR_MAX": 4e-4,       # Peak LR for OneCycle scheduler
     "BATCH_SIZE": 32,
@@ -34,7 +49,7 @@ HP = {
     "DROPOUT": 0.3,       
     "WEIGHT_DECAY": 1e-4, # AdamW weight decay
     "SMOOTHING": 0.05,    # Label smoothing factor
-    "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    "DEVICE": get_device(),
     "THRESHOLD": 0.5, 
     "PATIENCE": 12,       
     "DELTA": 0.0001,  

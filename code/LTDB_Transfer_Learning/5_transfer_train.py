@@ -17,6 +17,18 @@ TEST_DATA_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', '..', 'used_data',
 PRETRAINED_WEIGHTS = os.path.join(BASE_DIR, '..', '..', 'results', 'ptbxl_final', 'best_model.pt')
 OUTPUT_DIR = os.path.join(BASE_DIR, '..', '..', 'results', 'ltdb_sequential_v1_ultimate_F')
 
+def get_device():
+    # Try to load DirectML for AMD GPUs
+    try:
+        import torch_directml
+        return torch_directml.device()
+    except ImportError:
+        pass # Package not found, move on to the next check
+
+    # Fall back to CUDA or CPU
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 HP = {
     "BATCH_SIZE": 32,
     "EPOCHS": 150,
@@ -25,7 +37,7 @@ HP = {
     "LR_HEAD": 1e-3,
     "MAX_BEATS": 6,  
     "NUM_CLASSES": 4, 
-    "DEVICE": torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    "DEVICE": get_device()
 }
 
 def get_sequential_model():
