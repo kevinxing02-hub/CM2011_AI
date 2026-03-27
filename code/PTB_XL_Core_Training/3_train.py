@@ -4,6 +4,45 @@ Description:
     Final PTB-XL optimization using OneCycleLR, Label Smoothing, and 
     Class Weighting. Maintains original saving/loading structure.
 """
+"""
+================================================================================
+PTB-XL OPTIMIZED TRAINING PIPELINE V3: CONFIGURATION & SEGMENTATION LOGIC
+================================================================================
+
+1. SEGMENTATION STRATEGY (2.5s Windows)
+---------------------------------------
+- Segment Size: 625 samples (2.5 seconds @ 250Hz).
+- Transfer Learning Logic: This script is designed for downstream transfer 
+  learning to the LTDB (MIT-BIH Long-Term ECG Database). 
+- Rationale: 
+  * LTDB utilizes beat-by-beat labeling. 
+  * Using a full 10s record (2500 samples) "dilutes" the signal density of 
+    transient arrhythmias. 
+  * A 2.5s window ensures that a single abnormal beat significantly impacts 
+    the segment's feature representation, preventing the "attenuation of 
+    abnormality" that occurs in longer sequences.
+
+2. HYPERPARAMETER EXPLAINER: "SMOOTHING": 0.05
+----------------------------------------------
+- What it does: Instead of forcing the model to predict exactly "1" (True) or 
+  "0" (False), it tells the model to aim for "0.975" and "0.025".
+- Why use it: 
+  * Medical labeling is often "noisy" (different doctors might disagree on 
+    borderline ECGs). 
+  * It prevents the Transformer from becoming "overconfident." If the model is 
+    too certain, it stops learning and begins to overfit. 
+  * Smoothing encourages the model to learn the general "shape" of the 
+    arrhythmia rather than memorizing specific training examples.
+
+3. ARCHITECTURAL HPs
+--------------------
+- D_MODEL (128): Embedding width; balances feature depth with VRAM efficiency.
+- N_HEADS (2): Allows the attention mechanism to look at the 'R-peak' and 
+  'ST-segment' simultaneously.
+- ONE-CYCLE LR: A "super-convergence" scheduler that starts slow, peaks, 
+  and then cools down to find the flattest (most stable) local minima.
+================================================================================
+"""
 
 import torch
 import torch.nn as nn
@@ -40,19 +79,19 @@ def get_device():
 
 
 HP = {
-    "LR_MAX": 4e-4,       # Peak LR for OneCycle scheduler
-    "BATCH_SIZE": 32,
-    "EPOCHS": 60,         # OneCycle usually converges faster
-    "D_MODEL": 128,      
-    "N_HEADS": 2,
-    "N_LAYERS": 2,
-    "DROPOUT": 0.3,       
-    "WEIGHT_DECAY": 1e-4, # AdamW weight decay
-    "SMOOTHING": 0.05,    # Label smoothing factor
+    "LR_MAX": 4e-4,       # Peak learning rate for OneCycle; high enough for exploration, low enough for stability.
+    "BATCH_SIZE": 32,    # Standard size to balance memory usage and gradient noise for better generalization.
+    "EPOCHS": 60,         # Total iterations; OneCycleLR typically converges much faster than StepLR.
+    "D_MODEL": 128,      # Embedding dimension; captures complex ECG features without excessive parameter count.
+    "N_HEADS": 2,        # Multi-head attention count; allows model to focus on different ECG segments (e.g., P-wave vs QRS).
+    "N_LAYERS": 2,       # Depth of Transformer; 2 layers is often sufficient for 1D signal classification.
+    "DROPOUT": 0.3,      # Prevents overfitting by randomly deactivating neurons during training.
+    "WEIGHT_DECAY": 1e-4, # L2 regularization for AdamW to keep weight magnitudes in check.
+    "SMOOTHING": 0.05,    # Label smoothing; prevents overconfidence by softening target 0/1 values.
     "DEVICE": get_device(),
-    "THRESHOLD": 0.5, 
-    "PATIENCE": 12,       
-    "DELTA": 0.0001,  
+    "THRESHOLD": 0.5,    # Decision boundary for multi-label classification.
+    "PATIENCE": 12,       # Early stopping buffer; allows the model to "recover" during the LR cooldown phase.
+    "DELTA": 0.0001,     # Minimum improvement required to reset the early stopping counter.
     "MODEL_NAME": "best_model.pt"
 }
 
@@ -125,7 +164,8 @@ def main():
         num_layers=HP["N_LAYERS"]
     ).to(HP["DEVICE"])
     
-    # Class weights from previous successful run
+    # --- IMBALANCE HANDLING ---
+    # Calculates weights to penalize the model more for missing rare classes (e.g., STTC, MI).
     counts = torch.tensor([1984, 1048, 2200, 3852, 2084], dtype=torch.float32)
     pos_weights = (counts.max() / counts).to(HP["DEVICE"])
     
@@ -154,12 +194,14 @@ def main():
         t_loss = 0
         for x, y in train_loader:
             x, y = x.to(HP["DEVICE"]), y.to(HP["DEVICE"])
-            
+            # --- LABEL SMOOTHING LOGIC ---
+            # Redistributes probability mass to reduce over-fitting to noisy binary labels.
             # Label Smoothing Logic
             y_smoothed = y * (1 - HP["SMOOTHING"]) + 0.5 * HP["SMOOTHING"]
             
             optimizer.zero_grad()
             out = model(x)
+            # Use BCEWithLogitsLoss for multi-label tasks + class weights for imbalance.
             loss = nn.BCEWithLogitsLoss(pos_weight=pos_weights)(out, y_smoothed)
             loss.backward()
             optimizer.step()
