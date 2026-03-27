@@ -1,0 +1,6 @@
+LEAD-AGNOSTIC CONSISTENCY TEST
+==============================
+Consistency Score: 99.00%
+Total Samples: 52752
+The score measures how often the model makes the same prediction
+using different lead combinations (Standard vs Random).
