@@ -1,0 +1,13 @@
+Final Optimized PTB-XL Report:
+               precision    recall  f1-score   support
+
+          CD       0.64      0.74      0.69      1984
+         HYP       0.54      0.59      0.56      1048
+          MI       0.65      0.79      0.71      2200
+        NORM       0.84      0.85      0.84      3852
+        STTC       0.70      0.80      0.75      2084
+
+   micro avg       0.71      0.79      0.74     11168
+   macro avg       0.67      0.76      0.71     11168
+weighted avg       0.71      0.79      0.75     11168
+ samples avg       0.72      0.78      0.73     11168

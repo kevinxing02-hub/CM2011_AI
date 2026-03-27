@@ -1,8 +1,5 @@
 """
-PIPELINE STEP 4: LTDB Data Loading & Transfer Preparation
-Description: 
-    Processes Long-Term ECG Database (LTDB) records into 2.5s segments 
-    to match the PTB-XL pre-training window.
+PIPELINE STEP 4: LTDB Sequential Data Loading with Targeted Augmentation (FIXED)
 """
 import numpy as np
 import wfdb
@@ -10,18 +7,32 @@ import os
 import torch
 import glob
 from scipy.signal import resample
-from collections import Counter
-from sklearn.preprocessing import MultiLabelBinarizer
 
 CONFIG = {
-    "target_fs": 100,                 # Must match PTB-XL
-    "window_seconds": 2.5,            # Must match 250 samples
-    "stride_seconds": 1.75,           # Overlap for data augmentation
+    "target_fs": 100,
+    "window_seconds": 2.5,
+    "stride_seconds": 1.75,
+    "max_beats": 6,
+    "aug_offsets": [-0.2, 0.2],
 }
+
+LABEL_MAP = {
+    'N': 0, 'L': 0, 'R': 0,
+    'V': 1, 'E': 1,
+    'A': 2, 'a': 2, 'J': 2, 'S': 2,
+    'f': 3, 'F': 3, 'Q': 3,
+}
+
+RARE_CLASSES = [2, 3]
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DATA_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', '..', 'raw_data', 'ltdb'))
 SAVE_DIR = os.path.join(BASE_DIR, '..', '..', 'used_data', 'data_ltdb')
+
+def get_padded_label(window_labels):
+    if len(window_labels) < CONFIG["max_beats"]:
+        return window_labels + [-1] * (CONFIG["max_beats"] - len(window_labels))
+    return window_labels[:CONFIG["max_beats"]]
 
 def process_ltdb_signals(record_name, data_dir):
     path = os.path.join(data_dir, record_name)
@@ -29,46 +40,59 @@ def process_ltdb_signals(record_name, data_dir):
     ann = wfdb.rdann(path, 'atr')
     original_fs = fields['fs']
     
-    # Resample to 100Hz
     num_samples_new = int(len(signal) * CONFIG["target_fs"] / original_fs)
     resampled_signal = resample(signal, num_samples_new)
     
-    window_size = int(CONFIG["window_seconds"] * CONFIG["target_fs"]) # 250 samples
+    win_size = int(CONFIG["window_seconds"] * CONFIG["target_fs"])
     stride = int(CONFIG["stride_seconds"] * CONFIG["target_fs"])
 
     X_list, y_list = [], []
-    
-    for start in range(0, len(resampled_signal) - window_size, stride):
-        end = start + window_size
-        orig_start = int(start * original_fs / CONFIG["target_fs"])
-        orig_end = int(end * original_fs / CONFIG["target_fs"])
+    processed_starts = set()
+
+    # --- 1. Standard Sliding Window ---
+    for start in range(0, len(resampled_signal) - win_size, stride):
+        end = start + win_size
+        orig_start, orig_end = int(start * original_fs / 100), int(end * original_fs / 100)
         
-        indices = np.where((ann.sample >= orig_start) & (ann.sample < orig_end))[0]
-        window_anns = [ann.symbol[i] for i in indices]
+        idx = np.where((ann.sample >= orig_start) & (ann.sample < orig_end))[0]
+        labels = [LABEL_MAP[ann.symbol[i]] for i in idx if ann.symbol[i] in LABEL_MAP]
         
-        if len(window_anns) > 0:
-            counts = Counter(window_anns)
-            label, count = counts.most_common(1)[0]
-            
-            # Purity check: Arrhythmias allowed at 30% majority (per your code logic); Normal must be 100%
-            is_pure = len(set(window_anns)) == 1
-            is_majority_arr = (label != 'N') and (count / len(window_anns) >= 0.3)
-            
-            if (is_pure or is_majority_arr) and label not in ['~', '|', '+', 'x']:
-                segment = resampled_signal[start:end].T # [Leads, Time]
-                if segment.shape == (2, 250): # LTDB typically has 2 leads
-                    X_list.append(segment)
-                    y_list.append([label])
+        if labels:
+            seg = resampled_signal[start:end].T
+            if seg.shape == (2, 250): # Strict shape check
+                X_list.append(seg.astype(np.float32))
+                y_list.append(np.array(get_padded_label(labels), dtype=np.int64))
+                processed_starts.add(start)
+
+    # --- 2. Targeted Augmentation ---
+    for i, symbol in enumerate(ann.symbol):
+        label = LABEL_MAP.get(symbol)
+        if label in RARE_CLASSES:
+            for offset_sec in [0] + CONFIG["aug_offsets"]:
+                center_samp_100 = int(ann.sample[i] * CONFIG["target_fs"] / original_fs)
+                start = center_samp_100 + int(offset_sec * 100) - (win_size // 2)
+                end = start + win_size
+                
+                if start < 0 or end > len(resampled_signal) or start in processed_starts:
+                    continue
+                
+                orig_s, orig_e = int(start * original_fs / 100), int(end * original_fs / 100)
+                idx = np.where((ann.sample >= orig_s) & (ann.sample < orig_e))[0]
+                labels = [LABEL_MAP[ann.symbol[j]] for j in idx if ann.symbol[j] in LABEL_MAP]
+                
+                if labels:
+                    seg = resampled_signal[start:end].T
+                    if seg.shape == (2, 250):
+                        X_list.append(seg.astype(np.float32))
+                        y_list.append(np.array(get_padded_label(labels), dtype=np.int64))
+                        processed_starts.add(start)
 
     return X_list, y_list
 
 if __name__ == "__main__":
     os.makedirs(SAVE_DIR, exist_ok=True)
-    raw_files = glob.glob(os.path.join(RAW_DATA_PATH, "*.hea"))
-    records = [os.path.basename(f).replace('.hea', '') for f in raw_files]
-
-    print(f"--- Starting LTDB Processing ---")
-    print(f"Found {len(records)} records in {RAW_DATA_PATH}")
+    record_paths = glob.glob(os.path.join(RAW_DATA_PATH, "*.hea"))
+    records = [os.path.basename(f).replace('.hea', '') for f in record_paths]
 
     all_X, all_y = [], []
     for record in records:
@@ -76,50 +100,27 @@ if __name__ == "__main__":
             X_p, y_p = process_ltdb_signals(record, RAW_DATA_PATH)
             all_X.extend(X_p)
             all_y.extend(y_p)
-            print(f" Successfully processed {record}: {len(X_p)} segments extracted.")
+            print(f"Processed {record}: {len(X_p)} segments.")
         except Exception as e:
-            print(f" Error processing {record}: {e}")
+            print(f"Error {record}: {e}")
 
-    if len(all_X) == 0:
-        print("\n[!] ERROR: No segments were found. Please check your data paths or 'purity' logic.")
-    else:
-        X_final = np.array(all_X)
-        mlb = MultiLabelBinarizer()
-        y_final = mlb.fit_transform(all_y)
-
-        # 80/20 Train/Test Split
-        indices = np.random.permutation(len(X_final))
-        split_idx = int(len(X_final) * 0.8)
-        train_idx, test_idx = indices[:split_idx], indices[split_idx:]
-
-        # Saving
-        torch.save({'X': torch.tensor(X_final[train_idx], dtype=torch.float32),
-                    'y': torch.tensor(y_final[train_idx], dtype=torch.float32),
-                    'classes': mlb.classes_}, 
+    if all_X:
+        # THE FIX: Explicitly stack into a 3D array for X and 2D for y
+        print("Finalizing arrays... (This fixes the Inhomogeneous Shape error)")
+        X_f = np.stack(all_X, axis=0) # Result: [N, 2, 250]
+        y_f = np.stack(all_y, axis=0) # Result: [N, 6]
+        
+        indices = np.random.permutation(len(X_f))
+        split = int(len(X_f) * 0.8)
+        
+        train_idx, test_idx = indices[:split], indices[split:]
+        
+        torch.save({'X': torch.from_numpy(X_f[train_idx]), 
+                    'y': torch.from_numpy(y_f[train_idx])}, 
                    os.path.join(SAVE_DIR, 'ltdb_train.pt'))
         
-        torch.save({'X': torch.tensor(X_final[test_idx], dtype=torch.float32),
-                    'y': torch.tensor(y_final[test_idx], dtype=torch.float32),
-                    'classes': mlb.classes_}, 
+        torch.save({'X': torch.from_numpy(X_f[test_idx]), 
+                    'y': torch.from_numpy(y_f[test_idx])}, 
                    os.path.join(SAVE_DIR, 'ltdb_test.pt'))
-
-        # --- NEW VISUALIZATION OUTPUTS ---
-        print("\n" + "="*40)
-        print("PROCESSING SUMMARY")
-        print("="*40)
-        print(f"Total Segments Extracted: {len(X_final)}")
-        print(f"Training Segments:      {len(train_idx)}")
-        print(f"Testing Segments:       {len(test_idx)}")
-        print(f"Data Shape:             {X_final.shape}")
-        print("-" * 40)
         
-        # Flatten all_y to get counts of each individual label
-        label_counts = Counter([label for sublist in all_y for label in sublist])
-        print("CLASS DISTRIBUTION:")
-        for cls, count in sorted(label_counts.items(), key=lambda x: x[1], reverse=True):
-            percentage = (count / len(all_y)) * 100
-            print(f"  [{cls}]: {count:>6} samples ({percentage:>5.2f}%)")
-        
-        print("-" * 40)
-        print(f"Files saved to: {SAVE_DIR}")
-        print("="*40)
+        print(f"Successfully saved {len(X_f)} segments.")
