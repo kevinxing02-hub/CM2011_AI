@@ -29,7 +29,37 @@ TASKS = {
 OUTPUT_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..', '..', 'results', 'interpretability_final'))
   # Reshape [Batch, Leads, Samples] To [Batch * Leads, 1, Samples]. Each lead gets analysed seperately.
 
-
+def get_samples_per_class(X, y, classes, n_samples=1):
+    """
+    Fetches N samples for each class in a multi-label dataset.
+    Returns a batch of shape [C * N, Leads, Time], the corresponding labels,
+    and a list of the target class names for plotting/tracking.
+    """
+    selected_X = []
+    selected_y = []
+    target_class_names = []
+    
+    num_classes = y.shape[1]
+    
+    for class_idx in range(num_classes):
+        # Find indices where this class label is 1
+        valid_indices = torch.where(y[:, class_idx] == 1)[0]
+        
+        # Slice up to n_samples (handles edge cases where a class has fewer than N samples)
+        selected_indices = valid_indices[:n_samples]
+        
+        for idx in selected_indices:
+            selected_X.append(X[idx].unsqueeze(0))  # Maintain batch dimension [1, L, T]
+            selected_y.append(y[idx].unsqueeze(0))
+            target_class_names.append(classes[class_idx])
+            
+    if not selected_X:
+        raise ValueError("No positive samples found for any class.")
+        
+    batch_X = torch.cat(selected_X, dim=0)
+    batch_y = torch.cat(selected_y, dim=0)
+    
+    return batch_X, batch_y, target_class_names
 # Get the attention weights and aggregate over all layers. 
 def get_last_layer_attention(model, x_tensor):
     model.eval()
@@ -56,12 +86,12 @@ def get_last_layer_attention(model, x_tensor):
 
 # SHAP Waveform
 
-def run_lead_shap(model, X_batch, classes, out_dir):
-    print(f"Generating SHAP plots in {out_dir}...")
+def run_lead_shap(model, test_samples, full_X, classes, target_names, out_dir):
     device = next(model.parameters()).device
     
-    baseline = X[10:30].to(device)  # 20 Samples to use as a baseline
-    test_samples = X[:3].to(device) # Same 3 samples used in the attention maps
+    # Use full_X strictly for the baseline background
+    baseline = full_X[10:30].to(device)  
+    test_samples = test_samples.to(device) 
     
     explainer = shap.GradientExplainer(model, baseline)
     shap_vals = explainer.shap_values(test_samples)
@@ -201,6 +231,7 @@ if __name__ == "__main__":
         # Load Data
         data = torch.load(cfg["data_path"], weights_only=False)
         X = data['X'].float()
+        y = data['y'].float() # Need y to filter by class
         classes = data['classes']
 
         # Load Model
@@ -208,40 +239,41 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(cfg["model_path"], map_location=device))
         model.eval()
 
-
-        print(f"  -> Extracting Attention Rollout ({X.shape[1]} leads)...")
+        # ---> FETCH N SAMPLES PER CLASS <---
+        N = 2 # Change this to however many you want per class
+        sample_batch, sample_labels, target_names = get_samples_per_class(X, y, classes, n_samples=N)
+        sample_batch = sample_batch.to(device)
         
-        # Grab a small batch 
-        sample_batch = X[:3].to(device)
+        print(f"  -> Extracted {len(sample_batch)} balanced samples. Running Attention Rollout...")
+        
         attention_batch = get_last_layer_attention(model, sample_batch)
         
         # Plot attention map for each individual sample
         for i in range(len(sample_batch)):
-            sample_attn = attention_batch[i] # Shape: [Leads, Leads]
+            sample_attn = attention_batch[i] 
+            target_cls = target_names[i]
             
             plt.figure(figsize=(10, 8))
             sns.heatmap(sample_attn, annot=(X.shape[1] < 5), cmap='viridis')
             
-            plt.title(f"Attention Last Layer: {name} - Sample {i} ({X.shape[1]} Leads)")
+            # Dynamic title showing why this sample was picked
+            plt.title(f"Attention: {name} | Sample {i} (Targeted for: {target_cls})")
             plt.ylabel("Target Lead (Receiving Attention)")
             plt.xlabel("Source Lead (Giving Attention)")
             
-            plt.savefig(os.path.join(task_out, f"lead_attention_sample_{i}.png"))
+            plt.savefig(os.path.join(task_out, f"lead_attention_{target_cls}_sample_{i}.png"))
             plt.close()
 
-        # Run shap for all 
-        run_lead_shap(model, X, classes, task_out)
-
+        # Run shap using the targeted batch
+        print(f"  -> Running SHAP...")
+        run_lead_shap(model, sample_batch, X, classes, target_names, task_out)
 
         print(f"  -> Running Lead Masking Importance...")
+        importance_scores = lead_masking_importance(model, sample_batch, device)
 
-        # Use same samples as attention
-        masking_batch = X[:3]
-
-        importance_scores = lead_masking_importance(model, masking_batch, device)
-
-        for i in range(len(masking_batch)):
-            out_path = os.path.join(task_out, f"lead_masking_sample_{i}.png")
+        for i in range(len(sample_batch)):
+            target_cls = target_names[i]
+            out_path = os.path.join(task_out, f"lead_masking_{target_cls}_sample_{i}.png")
             plot_masking(importance_scores, i, out_path)
 
     print(f"\nDone! All results saved in: {OUTPUT_ROOT}")
