@@ -1,6 +1,52 @@
 """
 PIPELINE STEP 4: LTDB Sequential Data Loading with Targeted Augmentation (FIXED)
 """
+"""
+================================================================================
+PIPELINE STEP 4: LTDB SEQUENTIAL DATA PREPROCESSING & TARGETED AUGMENTATION
+================================================================================
+
+1. SEGMENTATION STRATEGY: 2.5s HIGH-DENSITY WINDOWS
+---------------------------------------------------
+- WINDOW SIZE: 250 samples (2.5s @ 100Hz). 
+- DENSITY PRINCIPLE: As established in LTDB benchmarks, 10s sequences "suck" 
+  due to the attenuation of pathology density. By using a 2.5s window, we 
+  ensure that transient arrhythmias (rare beats) dominate the temporal segment 
+  rather than being "washed out" by surrounding normal sinus rhythm.
+
+2. BASEMENT PRINCIPLE: THE 4-CLASS AAMI MAPPING
+-----------------------------------------------
+- RATIONALE: We map diverse clinical symbols (N, L, R, V, E, A, a, J, S, F, f, Q) 
+  into 4 unified subclasses based on the AAMI (Association for the Advancement 
+  of Medical Instrumentation) standard.
+- CLASS 0 (Normal/Bundle Branch): Standard rhythm baseline.
+- CLASS 1 (Ventricular): Critical arrhythmias (PVC/E).
+- CLASS 2 (Supraventricular): Ectopic beats (PAC/SVT).
+- CLASS 3 (Fusion/Unknown): Complex morphological overlaps.
+- WHY 4 CLASSES?: This standardizes the "medical vocabulary" between different 
+  datasets (PTB-XL, LTDB, and Chapman), enabling seamless Transfer Learning 
+  and highly interpretable clinical results.
+
+3. TARGETED AUGMENTATION FOR RARE PATHOLOGIES
+---------------------------------------------
+- THE PROBLEM: LTDB is heavily imbalanced; Normal beats (Class 0) overwhelm 
+  Rare Classes (2 & 3). 
+- THE STRATEGY: We perform 'Targeted Jittering.' When a Rare Class (S or F) 
+  is detected, we do not just take one window. Instead, we generate 3 windows:
+    1. Centered on the beat.
+    2. Offset by -0.2s (shifting the beat to the right).
+    3. Offset by +0.2s (shifting the beat to the left).
+- RESULT: This triples the representation of rare pathologies in the training 
+  set, forcing the Transformer to learn morphological features regardless of 
+  where the beat appears in the 2.5s window.
+
+4. SEQUENTIAL LABEL PADDING
+---------------------------
+- We use a "MAX_BEATS" (6) padding strategy. If a 2.5s window contains only 
+  3 beats, the label is padded with '-1' (ignored in loss). This allows the 
+  model to output a fixed-length sequence while handling variable heart rates.
+================================================================================
+"""
 import numpy as np
 import wfdb
 import os
