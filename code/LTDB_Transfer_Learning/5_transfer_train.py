@@ -1,3 +1,39 @@
+"""
+================================================================================
+LTDB SEQUENTIAL TRANSFER LEARNING: BEAT-BY-BEAT CLASSIFICATION (V1)
+================================================================================
+
+1. SEGMENTATION STRATEGY: THE 2.5s VS. 10s BENCHMARK !!
+---------------------------------------------------------------
+- RATIONALE: During LTDB testing, 2.5s windows (625 samples) significantly 
+  outperform 10s windows. 
+- WHY 10s FAILS: Using a 10s sequence "sucks" because it causes a severe 
+  ATTENUATED DENSITY of pathological signals. In a 10s strip, a single 
+  arrhythmic beat is diluted by 9 seconds of background noise/normal beats.
+- THE 2.5s ADVANTAGE: Shortening to 2.5s increases the relative density of the 
+  abnormality within the window. This ensures the Transformer's attention 
+  mechanism isn't "overwhelmed" by normal sinus rhythm, allowing it to 
+  capture transient arrhythmic events with much higher sensitivity.
+
+2. HYPERPARAMETER EXPLAINER (FOR PEER REVIEW)
+---------------------------------------------
+- "MAX_BEATS" (6): Caps the sequence length at 6 QRS complexes. This matches 
+  the high-density 2.5s window logic, ensuring a tight mapping between 
+  signal segments and beat-by-beat labels.
+- "LR_ENCODER" (5e-5) vs "LR_HEAD" (1e-3): Differential learning rates. 
+  We "freeze" the PTB-XL feature extraction logic with a low LR while 
+  allowing the new Sequential Head to learn LTDB mapping rapidly.
+- "SMOOTHING" (0.05): Prevents over-fitting to specific "hard" labels, 
+  encouraging the model to learn the general morphological "spirit" of the 
+  arrhythmia across different datasets.
+
+3. EXECUTION PROCESS
+--------------------
+- Data: Sequential tensors [X: Signals, y: Beat Labels].
+- Loss: CrossEntropy with 'ignore_index=-1' to handle variable beat counts.
+================================================================================
+"""
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -28,19 +64,29 @@ def get_device():
     # Fall back to CUDA or CPU
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 HP = {
-    "BATCH_SIZE": 32,
-    "EPOCHS": 150,
-    "PATIENCE": 18,      # Added: Early stopping patience
-    "LR_ENCODER": 5e-5,
-    "LR_HEAD": 1e-3,
-    "MAX_BEATS": 6,  
-    "NUM_CLASSES": 4, 
+    "BATCH_SIZE": 32,    # Standard power-of-2 size; balances VRAM and gradient stability.
+    "EPOCHS": 150,       # High limit; the model will likely stop early via the Patience monitor.
+    "PATIENCE": 18,      # Early stopping buffer; long enough to allow the head to adapt to the encoder.
+    
+    # --- DIFFERENTIAL LEARNING RATES ---
+    "LR_ENCODER": 5e-5,  # 10-20x smaller than head; prevents "catastrophic forgetting" of PTB-XL features.
+    "LR_HEAD": 1e-3,     # High LR for the new classifier to quickly learn LTDB-specific beat mapping.
+    
+    # --- SEQUENTIAL MAPPING ---
+    "MAX_BEATS": 6,      # Max number of QRS complexes in a 2.5s window (covers HR up to 144 BPM).
+    "NUM_CLASSES": 4,    # Target classes: Normal, Ventricular, Supraventricular, Fusion/Other.
     "DEVICE": get_device()
 }
 
 def get_sequential_model():
+    """
+    TRANSFORMATION LOGIC:
+    1. Loads the LeadAgnosticTransformer (5-class PTB-XL version).
+    2. Injects pre-trained weights into the Transformer layers.
+    3. Replaces the final classifier with a flattened Sequential Head 
+       of size [Max_Beats * Num_Classes] to output beat-by-beat labels.
+    """
     """Adjusts the LeadAgnosticTransformer for sequential beat prediction."""
     model = LeadAgnosticTransformer(num_classes=5).to(HP["DEVICE"])
     if os.path.exists(PRETRAINED_WEIGHTS):

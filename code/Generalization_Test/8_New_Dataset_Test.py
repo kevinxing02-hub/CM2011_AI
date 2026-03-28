@@ -1,5 +1,38 @@
+"""
+================================================================================
+EXTERNAL VALIDATION: CHAPMAN-SHAOXING GENERALIZATION TEST
+================================================================================
+0. OBJECTIVE: ZERO-SHOT GENERALIZATION
+- Dataset: "A large scale 12-lead ECG database for arrhythmia study" (Chapman).
+- Goal: The model is called for inference ONLY with NO additional training. 
+  This measures the "Real-World" robustness of the 2.5s feature extractor.
 
+1. CROSS-DATASET ADAPTATION (100Hz Resampling)
+----------------------------------------------
+- RATIONALE: The model was pre-trained on 250Hz. Resampling Chapman to 100Hz 
+  tests if the model's learned positional embeddings are frequency-agnostic.
+- WINDOW ALIGNMENT: 2.5s logic is maintained (250 samples @ 100Hz).
 
+2. RECORD-LEVEL AGGREGATION & THE ATTENUATION PROBLEM
+-----------------------------------------------------
+- THE PROBLEM: Chapman labels are 10s 'Record-Level', but 10s sequences 
+  attenuate the density of transient arrhythmias, leading to poor performance.
+- THE SOLUTION (4-SEGMENT SPLIT): We process each 10s record as 4 separate 
+  2.5s segments. 
+- AVOID ATTENUATED DENSITY: By splitting the record, we ensure that a 
+  pathology hidden in one corner of the 10s strip isn't "washed out." 
+  We use '.any()' aggregation: if the model finds a pathology in ANY of the 
+  4 high-density segments, the whole record is flagged. 
+- SENSITIVITY OVER PRECISION: We prioritize high RECALL. It is better to have 
+  a False Alarm (low precision) than to miss a high-density abnormal segment.
+
+3. EXTERNAL LABEL MAPPING (SNOMED TO AAMI)
+------------------------------------------
+- Mapping: Translates SNOMED codes (e.g., PVC, PAC, SVT) to a unified 
+  AAMI system (N, V, S, F) to standardize validation across different hospital 
+  labeling conventions.
+================================================================================
+"""
 
 import pandas as pd
 import numpy as np
